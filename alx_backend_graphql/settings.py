@@ -42,6 +42,8 @@ INSTALLED_APPS = [
     # Third-party
     "graphene_django",
 
+    "django_filters", 
+
     # Local
     "crm",
 
@@ -137,3 +139,4 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 GRAPHENE = {
     "SCHEMA": "alx_backend_graphql.schema.schema"
 }
+
