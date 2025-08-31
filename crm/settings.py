@@ -1,5 +1,9 @@
 
-
+INSTALLED_APPS = [
+    # ... other apps
+    'django_crontab',
+    # ... other apps
+]
 
 RONJOBS = [
     ('*/5 * * * *', 'crm.cron.log_crm_heartbeat'),
