@@ -1,15 +1,28 @@
 
+from celery.schedules import crontab
+
 INSTALLED_APPS = [
     # ... other apps
     'django_crontab',
+    'django_celery_beat',
     # ... other apps
 ]
 
-RONJOBS = [
+CRONJOBS = [
     ('*/5 * * * *', 'crm.cron.log_crm_heartbeat'),
+    ('0 */12 * * *', 'crm.cron.update_low_stock'),
 ]
 
-# Note: The CRONJOBS setting tells django-crontab to run the
-# `log_crm_heartbeat` function every 5 minutes.
-# Make sure to run the following command to register the cron job with your system:
-# python manage.py crontab add
+# Celery Configuration
+CELERY_BROKER_URL = 'redis://localhost:6379/0'
+CELERY_RESULT_BACKEND = 'redis://localhost:6379/0'
+CELERY_ACCEPT_CONTENT = ['json']
+CELERY_TASK_SERIALIZER = 'json'
+CELERY_RESULT_SERIALIZER = 'json'
+
+CELERY_BEAT_SCHEDULE = {
+    'generate-crm-report': {
+        'task': 'crm.tasks.generate_crm_report',
+        'schedule': crontab(day_of_week='mon', hour=6, minute=0),
+    },
+}
