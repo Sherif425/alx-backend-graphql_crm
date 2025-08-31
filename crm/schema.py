@@ -1,236 +1,114 @@
-# # import re
-# import graphene
-# from graphene_django import DjangoObjectType
-# from django.core.exceptions import ValidationError
-# from django.db import transaction
+# import datetime
+import os
+import requests
+from gql import gql, Client
+from gql.transport.requests import RequestsHTTPTransport
 
-# from .models import Customer, Product, Order
+def log_crm_heartbeat():
+    """
+    Logs a heartbeat message to a file to confirm the CRM application's health.
+    This function also queries a GraphQL endpoint to verify its responsiveness.
+    """
+    log_file_path = "/tmp/crm_heartbeat_log.txt"
+    timestamp = datetime.datetime.now().strftime("%d/%m/%Y-%H:%M:%S")
 
-# # ------------------ Types ------------------
-# class CustomerType(DjangoObjectType):
-#     class Meta:
-#         model = Customer
-#         fields = ("id", "name", "email", "phone")
+    graphql_status = "GraphQL endpoint is NOT responsive."
 
+    # Define the GraphQL query
+    query = gql("""
+        query {
+            hello
+        }
+    """)
 
-# class ProductType(DjangoObjectType):
-#     class Meta:
-#         model = Product
-#         fields = ("id", "name", "price", "stock")
+    # Note: Replace this with your actual GraphQL endpoint URL.
+    graphql_endpoint_url = "https://google.com"
 
+    try:
+        # Create a GraphQL client to execute the query
+        transport = RequestsHTTPTransport(
+            url=graphql_endpoint_url,
+            verify=True,
+            retries=3,
+        )
+        client = Client(transport=transport, fetch_schema_from_transport=True)
 
-# class OrderType(DjangoObjectType):
-#     class Meta:
-#         model = Order
-#         fields = ("id", "customer", "products", "order_date", "total_amount")
+        # Execute the query
+        result = client.execute(query)
 
-# # ------------------ Mutations ------------------
+        # Check the result of the query
+        if result.get("hello") == "Hello, world!":
+            graphql_status = "GraphQL endpoint is responsive."
 
-# # 1. Create Customer
-# class CreateCustomer(graphene.Mutation):
-#     class Arguments:
-#         name = graphene.String(required=True)
-#         email = graphene.String(required=True)
-#         phone = graphene.String(required=False)
+    except (requests.exceptions.ConnectionError, Exception) as e:
+        graphql_status = f"GraphQL endpoint is NOT responsive. Error: {e}"
 
-#     customer = graphene.Field(CustomerType)
-#     message = graphene.String()
+    message = f"{timestamp} CRM is alive. Status: {graphql_status}\n"
 
-#     def mutate(self, info, name, email, phone=None):
-#         if Customer.objects.filter(email=email).exists():
-#             raise ValidationError("Email already exists")
-
-#         if phone:
-#             pattern = r'^(\+?\d{7,15}|\d{3}-\d{3}-\d{4})$'
-#             if not re.match(pattern, phone):
-#                 raise ValidationError("Invalid phone format")
-
-#         customer = Customer.objects.create(name=name, email=email, phone=phone)
-#         return CreateCustomer(customer=customer, message="Customer created successfully")
-
-
-# # 2. Bulk Create Customers
-# class BulkCreateCustomers(graphene.Mutation):
-#     class Arguments:
-#         customers = graphene.List(
-#             graphene.NonNull(lambda: CreateCustomer.Arguments), required=True
-#         )
-
-#     customers = graphene.List(CustomerType)
-#     errors = graphene.List(graphene.String)
-
-#     @transaction.atomic
-#     def mutate(self, info, customers):
-#         created_customers = []
-#         errors = []
-
-#         for data in customers:
-#             try:
-#                 if Customer.objects.filter(email=data["email"]).exists():
-#                     raise ValidationError(f"Email {data['email']} already exists")
-
-#                 if "phone" in data and data["phone"]:
-#                     pattern = r'^(\+?\d{7,15}|\d{3}-\d{3}-\d{4})$'
-#                     if not re.match(pattern, data["phone"]):
-#                         raise ValidationError(f"Invalid phone format: {data['phone']}")
-
-#                 customer = Customer.objects.create(
-#                     name=data["name"],
-#                     email=data["email"],
-#                     phone=data.get("phone")
-#                 )
-#                 created_customers.append(customer)
-
-#             except ValidationError as e:
-#                 errors.append(str(e))
-
-#         return BulkCreateCustomers(customers=created_customers, errors=errors)
+    try:
+        # Open the file in append mode to avoid overwriting existing logs
+        with open(log_file_path, 'a') as f:
+            f.write(message)
+    except IOError as e:
+        # Log an error if the file cannot be written
+        print(f"Error writing to heartbeat log file: {e}")
 
 
-# # 3. Create Product
-# class CreateProduct(graphene.Mutation):
-#     class Arguments:
-#         name = graphene.String(required=True)
-#         price = graphene.Float(required=True)
-#         stock = graphene.Int(required=False, default_value=0)
+def update_low_stock():
+    """
+    A cron job to update products with low stock using a GraphQL mutation.
+    """
+    log_file_path = "/tmp/low_stock_updates_log.txt"
+    timestamp = datetime.datetime.now().strftime("%d/%m/%Y-%H:%M:%S")
 
-#     product = graphene.Field(ProductType)
+    # Define the GraphQL mutation
+    mutation = gql("""
+        mutation {
+            updateLowStockProducts {
+                updatedProducts {
+                    name
+                    stock
+                }
+                message
+            }
+        }
+    """)
+    
+    # Note: Replace this with your actual GraphQL endpoint URL
+    graphql_endpoint_url = "https://google.com"
 
-#     def mutate(self, info, name, price, stock=0):
-#         if price <= 0:
-#             raise ValidationError("Price must be positive")
-#         if stock < 0:
-#             raise ValidationError("Stock cannot be negative")
+    log_message = ""
+    try:
+        transport = RequestsHTTPTransport(
+            url=graphql_endpoint_url,
+            verify=True,
+            retries=3,
+        )
+        client = Client(transport=transport, fetch_schema_from_transport=True)
+        
+        # Execute the mutation
+        result = client.execute(mutation)
+        
+        mutation_result = result.get("updateLowStockProducts")
+        updated_products = mutation_result.get("updatedProducts", [])
+        status_message = mutation_result.get("message", "Mutation executed with no message.")
 
-#         product = Product.objects.create(name=name, price=price, stock=stock)
-#         return CreateProduct(product=product)
+        if updated_products:
+            product_names = [f"{p['name']} (new stock: {p['stock']})" for p in updated_products]
+            log_message = (
+                f"{timestamp} - Low stock update success: {status_message}\n"
+                f"Updated products: {', '.join(product_names)}\n"
+            )
+        else:
+            log_message = (
+                f"{timestamp} - Low stock update complete: {status_message}\n"
+            )
 
+    except (requests.exceptions.ConnectionError, Exception) as e:
+        log_message = f"{timestamp} - Low stock update FAILED. Error: {e}\n"
 
-# # 4. Create Order
-# class CreateOrder(graphene.Mutation):
-#     class Arguments:
-#         customer_id = graphene.ID(required=True)
-#         product_ids = graphene.List(graphene.ID, required=True)
-#         order_date = graphene.DateTime(required=False)
-
-#     order = graphene.Field(OrderType)
-
-#     def mutate(self, info, customer_id, product_ids, order_date=None):
-#         try:
-#             customer = Customer.objects.get(id=customer_id)
-#         except Customer.DoesNotExist:
-#             raise ValidationError("Invalid customer ID")
-
-#         if not product_ids:
-#             raise ValidationError("At least one product is required")
-
-#         products = Product.objects.filter(id__in=product_ids)
-#         if products.count() != len(product_ids):
-#             raise ValidationError("Some product IDs are invalid")
-
-#         order = Order.objects.create(customer=customer, order_date=order_date or None)
-#         order.products.set(products)
-#         order.calculate_total()
-
-#         return CreateOrder(order=order)
-
-# # ------------------ Schema Root ------------------
-# class Query(graphene.ObjectType):
-#     customers = graphene.List(CustomerType)
-#     products = graphene.List(ProductType)
-#     orders = graphene.List(OrderType)
-
-#     def resolve_customers(root, info):
-#         return Customer.objects.all()
-
-#     def resolve_products(root, info):
-#         return Product.objects.all()
-
-#     def resolve_orders(root, info):
-#         return Order.objects.all()
-
-
-# class Mutation(graphene.ObjectType):
-#     create_customer = CreateCustomer.Field()
-#     bulk_create_customers = BulkCreateCustomers.Field()
-#     create_product = CreateProduct.Field()
-#     create_order = CreateOrder.Field()
-import graphene
-from graphene_django.types import DjangoObjectType
-from .models import Customer
-
-
-class CustomerType(DjangoObjectType):
-    class Meta:
-        model = Customer
-
-
-# ---------------- Queries ----------------
-class Query(graphene.ObjectType):
-    customers = graphene.List(CustomerType)
-
-    def resolve_customers(root, info, **kwargs):
-        return Customer.objects.all()
-
-
-# ---------------- Mutations ----------------
-class CreateCustomer(graphene.Mutation):
-    # ✅ Define arguments properly
-    class Arguments:
-        name = graphene.String(required=True)
-        email = graphene.String(required=True)
-
-    customer = graphene.Field(CustomerType)
-
-    @classmethod
-    def mutate(cls, root, info, name, email):
-        customer = Customer(name=name, email=email)
-        customer.save()
-        return CreateCustomer(customer=customer)
-
-
-class UpdateCustomer(graphene.Mutation):
-    class Arguments:
-        id = graphene.ID(required=True)
-        name = graphene.String(required=False)
-        email = graphene.String(required=False)
-
-    customer = graphene.Field(CustomerType)
-
-    @classmethod
-    def mutate(cls, root, info, id, name=None, email=None):
-        try:
-            customer = Customer.objects.get(pk=id)
-        except Customer.DoesNotExist:
-            raise Exception("Customer not found")
-
-        if name is not None:
-            customer.name = name
-        if email is not None:
-            customer.email = email
-        customer.save()
-
-        return UpdateCustomer(customer=customer)
-
-
-class DeleteCustomer(graphene.Mutation):
-    class Arguments:
-        id = graphene.ID(required=True)
-
-    ok = graphene.Boolean()
-
-    @classmethod
-    def mutate(cls, root, info, id):
-        try:
-            customer = Customer.objects.get(pk=id)
-            customer.delete()
-            return DeleteCustomer(ok=True)
-        except Customer.DoesNotExist:
-            return DeleteCustomer(ok=False)
-
-
-# Root Mutation
-class Mutation(graphene.ObjectType):
-    create_customer = CreateCustomer.Field()
-    update_customer = UpdateCustomer.Field()
-    delete_customer = DeleteCustomer.Field()
+    try:
+        with open(log_file_path, 'a') as f:
+            f.write(log_message)
+    except IOError as e:
+        print(f"Error writing to low stock update log file: {e}")
